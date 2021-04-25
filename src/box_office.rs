@@ -2,6 +2,9 @@ use actix::{Actor, Context, Addr};
 use crate::models::Event;
 use crate::ticket_seller::TicketSeller;
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::Poll;
 
 pub struct BoxOffice {
     pub(crate) events: HashMap<String, Addr<TicketSeller>>
@@ -26,6 +29,7 @@ pub mod messages {
     use actix::dev::Request;
     use crate::ticket_seller::TicketSeller;
     use serde::{Serialize, Deserialize};
+    use crate::maybe::Maybe;
 
     #[derive(Serialize, Deserialize)]
     pub struct CreateEvent {
@@ -43,19 +47,21 @@ pub mod messages {
 
     pub struct EventExists;
 
+    #[derive(Serialize, Deserialize)]
     pub struct GetEvent {
         pub name: String
     }
 
     pub struct GetEvents;
 
+    #[derive(Serialize, Deserialize)]
     pub struct GetTickets {
         pub event_name: String,
         pub tickets_count: usize,
     }
 
     impl Message for GetTickets {
-        type Result = Option<Result<Tickets, MailboxError>>;
+        type Result = Maybe<Result<Tickets, MailboxError>>;
     }
 
     pub struct CancelEvent {
@@ -69,8 +75,9 @@ pub mod receive {
     use crate::ticket_seller::TicketSeller;
     use crate::models::Ticket;
     use crate::ticket_seller::messages::{Tickets, Buy};
-    use actix::{Handler, Actor, Context, MailboxError, Response};
+    use actix::{Handler, Actor, Context, MailboxError, Response, Addr};
     use actix::dev::MessageResponse;
+    use crate::maybe::Maybe;
 
     impl Handler<CreateEvent> for BoxOffice {
         type Result = Result<EventCreated, EventExists>;
@@ -91,12 +98,16 @@ pub mod receive {
         }
     }
     impl Handler<GetTickets> for BoxOffice {
-        type Result = Response<Option<Result<Tickets, MailboxError>>>;
+        type Result = Response<Maybe<Result<Tickets, MailboxError>>>;
 
         fn handle(&mut self, msg: GetTickets, ctx: &mut Self::Context) -> Self::Result {
-            let future = self.events.get(&*msg.event_name)
-                .and_then(|response| response.send(Buy { tickets_count: msg.tickets_count }));
-            Response::fut(future)
+            match self.events.get(&*msg.event_name) {
+                None => Response::reply(Maybe::None),
+                Some(actor) => {
+                    let request = actor.send(Buy { tickets_count: msg.tickets_count });
+                    Response::fut(Maybe::Some(request))
+                }
+            }
         }
     }
 }

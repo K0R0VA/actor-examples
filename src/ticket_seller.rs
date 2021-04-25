@@ -14,6 +14,7 @@ pub mod messages {
     use crate::models::{Ticket};
     use actix::{Message, Actor};
     use actix::dev::{MessageResponse, OneshotSender};
+    use serde::{Deserialize, Serialize};
 
     pub struct Add {
         pub tickets: Vec<Ticket>
@@ -24,6 +25,7 @@ pub mod messages {
     pub struct Buy {
         pub tickets_count: usize
     }
+    #[derive(Serialize, Deserialize)]
     pub struct Tickets {
         pub event: String,
         pub entries: Option<Vec<Ticket>>

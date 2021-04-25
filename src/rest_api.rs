@@ -1,26 +1,30 @@
 use actix_web::web::ServiceConfig;
 use actix::{System, Actor};
 use crate::box_office::BoxOffice;
-use crate::rest_api::routes::create_event;
+use crate::rest_api::routes::{create_event, buy_tickets};
+use std::collections::HashMap;
 
 pub fn configuration(config: &mut ServiceConfig) {
-    let box_office = BoxOffice::default().start();
     config
-        .data(box_office)
-        .service(create_event);
+        .service(create_event)
+        .service(buy_tickets);
 }
 
 pub mod routes {
-    use actix::Addr;
-    use actix_web::web::{Data, Path};
+    use actix::{Addr, MailboxError};
+    use actix_web::web::{Data, Path, Json};
     use crate::box_office::BoxOffice;
     use actix_web::{Responder, HttpResponse};
     use crate::box_office::messages::{CreateEvent, GetTickets};
     use actix_web::post;
+    use serde::Serialize;
+    use actix_web::http::StatusCode;
+    use crate::maybe::Maybe;
+    use crate::ticket_seller::messages::Tickets;
 
-    #[post("event/{name}/tickets/{count}")]
-    pub async fn create_event(box_office: Data<Addr<BoxOffice>>, Path((name, count)): Path<(String, usize)>) -> impl Responder {
-        let response = box_office.send(CreateEvent {name, tickets_count: count}).await;
+    #[post("event")]
+    pub async fn create_event(box_office: Data<Addr<BoxOffice>>, msg: Json<CreateEvent>) -> impl Responder {
+        let response = box_office.send(msg.into_inner()).await;
         match response {
             Ok(result) => {
                 match result {
@@ -32,17 +36,18 @@ pub mod routes {
         }
     }
 
-    #[post("buy/{event}/tickets/{count}")]
-    pub async fn buy_tickets(box_office: Data<Addr<BoxOffice>>, Path((event, count)): Path<(String, usize)>) -> impl Responder {
-        let response = box_office.send(GetTickets { event_name: event, tickets_count: count }).await;
+    #[post("buy")]
+    pub async fn buy_tickets(box_office: Data<Addr<BoxOffice>>, msg: Json<GetTickets>) -> impl Responder {
+        let response = box_office.send(msg.into_inner()).await;
         match response {
-            Ok(result) => {
-                match result {
-                    Ok(event_created) => HttpResponse::Created().body(format!("Event {} was created", event_created.event)),
-                    Err(exist) => HttpResponse::BadRequest().body("Event already exist")
+            Err(err) => HttpResponse::InternalServerError().finish(),
+            Ok(maybe) => match maybe {
+                Maybe::None => HttpResponse::BadRequest().finish(),
+                Maybe::Some(result) => match result {
+                    Ok(tickets) => HttpResponse::Ok().json(tickets),
+                    Err(_) => HttpResponse::InternalServerError().finish(),
                 }
             }
-            Err(_) => HttpResponse::InternalServerError().body("something crash")
         }
     }
 }
