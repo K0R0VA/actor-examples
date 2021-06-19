@@ -1,9 +1,9 @@
-use crate::models::{Ticket, Event};
+use crate::models::{Event, Ticket};
 use actix::{Actor, Context};
 
 pub struct TicketSeller {
     pub(crate) event_name: String,
-    pub(crate) tickets: Vec<Ticket>
+    pub(crate) tickets: Vec<Ticket>,
 }
 
 impl Actor for TicketSeller {
@@ -11,33 +11,33 @@ impl Actor for TicketSeller {
 }
 
 pub mod messages {
-    use crate::models::{Ticket};
-    use actix::{Message, Actor};
+    use crate::models::Ticket;
     use actix::dev::{MessageResponse, OneshotSender};
+    use actix::{Actor, Message};
     use serde::{Deserialize, Serialize};
 
     pub struct Add {
-        pub tickets: Vec<Ticket>
+        pub tickets: Vec<Ticket>,
     }
     impl Message for Add {
         type Result = ();
     }
     pub struct Buy {
-        pub tickets_count: usize
+        pub tickets_count: usize,
     }
     #[derive(Serialize, Deserialize)]
     pub struct Tickets {
         pub event: String,
-        pub entries: Option<Vec<Ticket>>
+        pub entries: Option<Vec<Ticket>>,
     }
     impl Message for Buy {
         type Result = Tickets;
     }
 
     impl<A, M> MessageResponse<A, M> for Tickets
-        where
-            A: Actor,
-            M: Message<Result = Tickets>,
+    where
+        A: Actor,
+        M: Message<Result = Tickets>,
     {
         fn handle(self, ctx: &mut <A as Actor>::Context, tx: Option<OneshotSender<Tickets>>) {
             if let Some(tx) = tx {
@@ -56,8 +56,8 @@ pub mod messages {
 }
 
 pub mod receive {
+    use crate::ticket_seller::messages::{Add, Buy, GetEvent, Tickets};
     use crate::ticket_seller::TicketSeller;
-    use crate::ticket_seller::messages::{Add, Buy, Tickets, GetEvent};
     use actix::Handler;
 
     impl Handler<Add> for TicketSeller {
@@ -68,16 +68,20 @@ pub mod receive {
         }
     }
     impl Handler<Buy> for TicketSeller {
-
         type Result = Tickets;
 
         fn handle(&mut self, msg: Buy, _ctx: &mut Self::Context) -> Self::Result {
             if self.tickets.len() >= msg.tickets_count {
-                let entries = Some(self.tickets.drain(.. msg.tickets_count).collect());
-                Tickets {event: self.event_name.clone(), entries}
-            }
-            else {
-                Tickets {event: self.event_name.clone(), entries: None}
+                let entries = Some(self.tickets.drain(..msg.tickets_count).collect());
+                Tickets {
+                    event: self.event_name.clone(),
+                    entries,
+                }
+            } else {
+                Tickets {
+                    event: self.event_name.clone(),
+                    entries: None,
+                }
             }
         }
     }
@@ -88,5 +92,4 @@ pub mod receive {
             self.event_name.clone()
         }
     }
-
 }
